@@ -70,7 +70,7 @@ function plugin_escalationlog_uninstall() {
 }
 
 function plugin_escalationlog_item_purge($item) {
-    Toolbox::logInFile('php-errors', 'Item Purge Item: ' . print_R($item, true) . PHP_EOL); 
+
     global $DB;
 
     $getLastEscalationForTicket = $DB->request([
@@ -107,8 +107,40 @@ function plugin_escalationlog_item_purge($item) {
 }
 
 function plugin_escalationlog_item_add($item) {
-     Toolbox::logInFile('php-errors', 'Item Add Item: ' . print_R($item, true) . PHP_EOL);
     global $DB;
+
+    $verifyTypeSLA = $DB->request([
+        'SELECT' => [
+            'glpi_slas.id AS sla_id',
+            'glpi_slas.type AS sla_type',
+            'glpi_slalevels.id AS slalevels_id'
+        ],
+        'FROM' => 'glpi_slalevels',
+        'INNER JOIN' => [
+            'glpi_slas' => [
+                'ON' => [
+                    'glpi_slas' => 'id',
+                    'glpi_slalevels' => 'slas_id'
+                ]
+            ]
+        ],
+        'WHERE' => [
+            'glpi_slalevels.id' => $item->fields['slalevels_id']
+        ]
+    ]);
+
+
+
+    $dataVerifyTypeSLA = iterator_to_array($verifyTypeSLA, false);
+
+    Toolbox::logInFile(
+        'php-errors',
+        'Verify Type SLA: ' . print_r($dataVerifyTypeSLA, true)
+    );
+    
+    if (empty($dataVerifyTypeSLA) || $dataVerifyTypeSLA[0]['sla_type'] == 1) {
+        return;
+    }
 
     $verifyEscalationForTicket = $DB->request([
         'FROM' => 'glpi_plugin_escalation_logs',
@@ -123,8 +155,7 @@ function plugin_escalationlog_item_add($item) {
     
     $dataVerifyEscalation = iterator_to_array($verifyEscalationForTicket, false);
     
-    Toolbox::logInFile('php-errors', 'Resultado: ' . print_r($dataVerifyEscalation, true) . PHP_EOL);
-
+   
     if(!empty($dataVerifyEscalation)) {
 
         $ticketData = $DB->request([
@@ -136,13 +167,10 @@ function plugin_escalationlog_item_add($item) {
         $ticketDetail = iterator_to_array($ticketData, false);
 
 
-
-        Toolbox::logInFile('php-errors', 'T_DATA: ' . print_r($ticketDetail, true) . PHP_EOL);
-        
-
         if(
+            !empty($ticketDetail) &&
             in_array($ticketDetail[0]['status'], [4,5,6]) 
-            && $dataVerifyEscalation[0]['pending_validation'] = 1
+            && $dataVerifyEscalation[0]['pending_validation'] == 1
         ) {
             $DB->update(
                     'glpi_plugin_escalation_logs',
@@ -155,7 +183,7 @@ function plugin_escalationlog_item_add($item) {
 
         return;
     }
-
+    
     $DB->insert(
         'glpi_plugin_escalation_logs', 
         [
